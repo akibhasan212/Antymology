@@ -41,6 +41,11 @@ namespace Antymology.Terrain
         /// </summary>
         private SimplexNoise SimplexNoise;
 
+
+        public int workerAntCount = 2;
+        public GameObject queenPrefab;
+
+
         #endregion
 
         #region Initialization
@@ -50,6 +55,12 @@ namespace Antymology.Terrain
         /// </summary>
         void Awake()
         {
+
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
             // Generate new random number generator
             RNG = new System.Random(ConfigurationManager.Instance.Seed);
 
@@ -83,13 +94,22 @@ namespace Antymology.Terrain
             GenerateAnts();
         }
 
+
+
+
         /// <summary>
         /// TO BE IMPLEMENTED BY YOU
         /// </summary>
         private void GenerateAnts()
         {
-            throw new NotImplementedException();
+            // Spawn queen
+            SpawnQueen();
+
+            // Spawn workers
+            for (int i = 0; i < workerAntCount; i++)
+                SpawnWorker();
         }
+
 
         #endregion
 
@@ -113,6 +133,45 @@ namespace Antymology.Terrain
 
             return Blocks[WorldXCoordinate, WorldYCoordinate, WorldZCoordinate];
         }
+
+
+
+        private void SpawnWorker()
+        {
+            int x = RNG.Next(1, Blocks.GetLength(0) - 2);
+            int z = RNG.Next(1, Blocks.GetLength(2) - 2);
+
+            int y = GetTopSolidY(x, z);
+
+            Vector3 spawnPos = new Vector3(x, y + 1, z);
+
+            GameObject ant = Instantiate(antPrefab, spawnPos, Quaternion.identity);
+            ant.name = "WorkerAnt";
+        }
+
+        private void SpawnQueen()
+        {
+            // Spawn near center to avoid edges/container walls
+            int x = Blocks.GetLength(0) / 2;
+            int z = Blocks.GetLength(2) / 2;
+
+            // Clamp into valid range just in case
+            x = Mathf.Clamp(x, 1, Blocks.GetLength(0) - 2);
+            z = Mathf.Clamp(z, 1, Blocks.GetLength(2) - 2);
+
+            int y = GetTopSolidY(x, z);
+
+            Vector3 spawnPos = new Vector3(x, y + 1, z);
+
+            GameObject prefabToUse = (queenPrefab != null) ? queenPrefab : antPrefab;
+
+            GameObject queen = Instantiate(prefabToUse, spawnPos, Quaternion.identity);
+            queen.name = "QueenAnt";
+
+            // Optional: make queen visually distinct even without a special prefab
+            queen.transform.localScale *= 1.5f;
+        }
+
 
         /// <summary>
         /// Retrieves an abstract block type at the desired local coordinates within a chunk.
@@ -216,6 +275,49 @@ namespace Antymology.Terrain
                 ChunkZCoordinate * LocalZCoordinate
             );
         }
+
+        public Vector3Int WorldPosToBlockCoord(Vector3 worldPos)
+        {
+            // Since blocks are aligned to integer grid
+            int x = Mathf.RoundToInt(worldPos.x);
+            int y = Mathf.RoundToInt(worldPos.y);
+            int z = Mathf.RoundToInt(worldPos.z);
+            return new Vector3Int(x, y, z);
+        }
+        public Vector3Int GetBlockCoordBelowWorldPos(Vector3 worldPos)
+        {
+            int x = Mathf.RoundToInt(worldPos.x);
+            int z = Mathf.RoundToInt(worldPos.z);
+
+            // Ant is usually standing at y = blockY + 1
+            int y = Mathf.FloorToInt(worldPos.y - 0.5f);
+
+            return new Vector3Int(x, y, z);
+        }
+
+        public int GetTopSolidY(int x, int z)
+        {
+            // Start from top and find first non-air block
+            for (int y = Blocks.GetLength(1) - 1; y >= 0; y--)
+            {
+                if (GetBlock(x, y, z) is AirBlock) continue;
+                return y;
+            }
+
+            return 0;
+        }
+
+
+        public AbstractBlock GetBlockBelow(Vector3 antWorldPos)
+        {
+            Vector3Int coord = GetBlockCoordBelowWorldPos(antWorldPos);
+            return GetBlock(coord.x, coord.y, coord.z);
+        }
+
+
+
+
+
 
         #endregion
 
@@ -395,8 +497,9 @@ namespace Antymology.Terrain
 
             if (updateZ - 1 >= 0)
                 Chunks[updateX, updateY, updateZ - 1].updateNeeded = true;
-            if (updateX + 1 < Chunks.GetLength(2))
+            if (updateZ + 1 < Chunks.GetLength(2))
                 Chunks[updateX, updateY, updateZ + 1].updateNeeded = true;
+
         }
 
         #endregion
